@@ -5,3 +5,4 @@ supabase
 pillow
 numpy
 ultralytics
+python-dotenv

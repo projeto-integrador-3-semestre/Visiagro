@@ -10,10 +10,11 @@ import numpy as np
 # Carrega as variáveis do arquivo .env
 load_dotenv()
 
-# Inicialização do modelo YOLOv8 (Small)
-model = YOLO("yolov8s.pt")
+# Carrega o modelo customizado do Fernando
+# Certifique-se de que o arquivo .pt esteja na pasta 'api' ou na raiz
+model = YOLO("modelo_yolov8s_det.pt")
 
-app = FastAPI(title="Visiagro API", description="Detecção de pragas agrícolas via Visão Computacional")
+app = FastAPI(title="Visiagro API", description="Detecção de Pragas com YOLOv8 Custom")
 
 # Credenciais do Supabase (Injetar via variáveis de ambiente em produção)
 # Agora o código pega a chave "escondida" no sistema
