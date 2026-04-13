@@ -1,4 +1,5 @@
-# api/index.py
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File
 from supabase import create_client, Client
 from ultralytics import YOLO
@@ -6,47 +7,56 @@ from io import BytesIO
 from PIL import Image
 import numpy as np
 
+# Carrega as variáveis do arquivo .env
+load_dotenv()
+
+# Inicialização do modelo YOLOv8 (Small)
 model = YOLO("yolov8s.pt")
 
-app = FastAPI()
+app = FastAPI(title="Visiagro API", description="Detecção de pragas agrícolas via Visão Computacional")
 
-# Configurações do Banco (Pegue no painel do Supabase)
-URL = "https://lgvnpgcaqrnvmxanjpml.supabase.co"
-KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxndm5wZ2NhcXJudm14YW5qcG1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTA4MTAsImV4cCI6MjA5MTYyNjgxMH0.cgTxX0oMpTG6MclRg-fZ2vhQ-mhJxlVNcxkF2kPjj-s"
+# Credenciais do Supabase (Injetar via variáveis de ambiente em produção)
+# Agora o código pega a chave "escondida" no sistema
+URL = os.getenv("SUPABASE_URL")
+KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(URL, KEY)
 
-@app.post("/analyze")
+@app.post("/analyze", summary="Analisa uma imagem e persiste o resultado")
 async def analyze_image(file: UploadFile = File(...)):
-    # 1. Ler os bytes da imagem
+    """
+    Endpoint que recebe um arquivo de imagem, realiza a inferência com YOLOv8
+    e armazena o log da predição no banco de dados Supabase.
+    """
+    # Processamento da imagem recebida
     contents = await file.read()
-
-    # 2. Abrir a imagem com o PIL
     image = Image.open(BytesIO(contents))
 
-    # 3. Rodar a predição direto com o YOLO
+    # Execução da inferência
     results = model.predict(image)
-
-    # Nova Lista para guardar TUDO que ele achar na foto
-    objetos_detectados = []
     
-    # Vasculhando todas as "caixas" que o YOLO encontrou
+    # Extração das classes detectadas
+    detectados = []
     for r in results:
         for box in r.boxes:
-            classe_id = int(box.cls[0])       # Pega o ID numérico
-            nome = model.names[classe_id]     # Traduz pro nome
-            objetos_detectados.append(nome)
+            class_id = int(box.cls[0])
+            label_name = model.names[class_id]
+            detectados.append(label_name)
             
-    # Formata bonitinho para o banco (Ex: "Percevejo, Mosca-branca ou Lagarta")
-    if objetos_detectados:
-        result = ", ".join(objetos_detectados)
-    else:
-        result = "Nada detectado"
+    # Consolidação dos resultados (String separada por vírgula)
+    label_final = ", ".join(detectados) if detectados else "Nenhuma detecção"
         
-    # 4. Salvar no Supabase
-    data = {
+    # Persistência de dados no Supabase (Tabela: predictions)
+    payload = {
         "filename": file.filename,
-        "label": result
+        "label": label_final
     }
-    response = supabase.table("predictions").insert(data).execute()
     
-    return {"status": "success", "analysis": result}   
+    try:
+        supabase.table("predictions").insert(payload).execute()
+        return {
+            "status": "success", 
+            "filename": file.filename, 
+            "analysis": label_final
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
