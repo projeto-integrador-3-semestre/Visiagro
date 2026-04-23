@@ -9,13 +9,18 @@ O objetivo da plataforma é fornecer insights que auxiliem na tomada de decisão
 
 ## 🏗️ Arquitetura do Sistema
 
-O sistema é dividido em três camadas principais:
+O sistema é dividido em quatro camadas principais:
 
-* **Frontend:** Interface responsável pela visualização dos dados e interação do usuário.
-* **Backend:** Responsável pela lógica de negócio e comunicação com o banco de dados.
-* **Banco de Dados:** Armazena informações como registros de pragas, agrotóxicos e previsões.
+* **Frontend:** Interface responsável pela interação com o usuário, envio de imagens e exibição dos resultados da análise.
 
-A comunicação entre as camadas é feita via APIs, garantindo modularidade e escalabilidade.
+* **Backend:** Responsável pela lógica da aplicação, processamento das requisições, integração com a API de IA e comunicação com o banco de dados.
+
+* **Banco de Dados:** Armazena informações como usuários, histórico de análises, registros de pragas e demais dados do sistema.
+
+* **Modelo de IA (API externa):** Responsável por processar as imagens enviadas pelo usuário e retornar a identificação das possíveis pragas com base em padrões visuais.
+
+A comunicação entre as camadas é realizada por meio de APIs, garantindo modularidade, escalabilidade e separação de responsabilidades.
+
 
 ## ⚙️ Tecnologias Utilizadas
 
