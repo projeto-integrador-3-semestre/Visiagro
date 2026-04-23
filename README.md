@@ -22,6 +22,7 @@ A comunicação entre as camadas é feita via APIs, garantindo modularidade e es
 * **Supabase** → Banco de dados e autenticação
 * **Hugging Face** → Modelos de inteligência artificial
 * **JavaScript / TypeScript** → Desenvolvimento do frontend/backend
-## 🎯 Objetivo
+## 🎯 Objetivo do Projeto
 
-Facilitar o acesso a informações agrícolas relevantes e apoiar decisões com base em dados.
+Desenvolver uma aplicação capaz de identificar pragas agrícolas a partir de imagens enviadas pelo usuário, utilizando Inteligência Artificial, e retornar informações relevantes para apoio rápido na tomada de decisão.
+
