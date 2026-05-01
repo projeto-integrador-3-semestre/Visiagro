@@ -19,7 +19,7 @@ app = FastAPI(title="Visiagro API", description="Detecção de Pragas com YOLOv8
 # Credenciais do Supabase (Injetar via variáveis de ambiente em produção)
 # Agora o código pega a chave "escondida" no sistema
 URL = os.getenv("SUPABASE_URL")
-KEY = os.getenv("SUPABASE_KEY")
+KEY = os.getenv("SUPABASE_ANON_KEY")
 supabase: Client = create_client(URL, KEY)
 
 @app.post("/analyze", summary="Analisa uma imagem e persiste o resultado")

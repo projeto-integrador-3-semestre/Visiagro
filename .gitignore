@@ -4,3 +4,5 @@ __pycache__/
 *.h5
 runs/
 .env
+front/.env
+front/node_modules/

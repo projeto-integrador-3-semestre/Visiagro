@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import logoOficialIcon from "./assets/logo-oficial-icon.png";
+import { supabase } from "./lib/supabase";
 
 const C = {
   bg: "#0a1a0a",
@@ -352,6 +353,36 @@ const InfoCard = ({ title, children, style }) => (
   </div>
 );
 
+const LoadingState = ({ label = "Carregando dados..." }) => (
+  <div style={{ padding: 18, color: C.textSub, textAlign: "center", fontSize: 14 }}>{label}</div>
+);
+
+const EmptyState = ({ label }) => (
+  <div
+    style={{
+      padding: 18,
+      color: C.textSub,
+      textAlign: "center",
+      fontSize: 14,
+      background: C.bgCard,
+      border: `1px solid ${C.border}`,
+      borderRadius: 14,
+    }}
+  >
+    {label}
+  </div>
+);
+
+const getDisplayName = (profile, user) => profile?.nome || user?.email?.split("@")[0] || "Usuario";
+const getInitials = (name) =>
+  name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "U";
+
 const BackHeader = ({ title, onBack }) => (
   <div
     style={{
@@ -565,8 +596,35 @@ function SplashScreen({ onDone }) {
 }
 
 function LoginScreen({ onLogin, isDesktop = false }) {
+  const [mode, setMode] = useState("login");
+  const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const submit = async () => {
+    setError("");
+    setNotice("");
+    if (!email || !pass || (mode === "signup" && !nome.trim())) {
+      setError("Preencha todos os campos obrigatorios.");
+      return;
+    }
+
+    setLoading(true);
+    const result = await onLogin({ mode, nome: nome.trim(), email, password: pass });
+    setLoading(false);
+
+    if (result?.error) {
+      setError(result.error);
+      return;
+    }
+    if (result?.notice) {
+      setNotice(result.notice);
+    }
+  };
+
   const inp = {
     background: C.bgCard,
     border: `1px solid ${C.border}`,
@@ -588,6 +646,16 @@ function LoginScreen({ onLogin, isDesktop = false }) {
         <p style={{ color: C.textSub, fontSize: 13 }}>Visao computacional para a agricultura</p>
       </div>
       <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12, animation: "fadeUp .6s .1s both" }}>
+        {mode === "signup" && (
+          <input
+            style={inp}
+            placeholder="Nome"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onFocus={(e) => (e.target.style.borderColor = C.green)}
+            onBlur={(e) => (e.target.style.borderColor = C.border)}
+          />
+        )}
         <input
           style={inp}
           placeholder="E-mail"
@@ -606,9 +674,16 @@ function LoginScreen({ onLogin, isDesktop = false }) {
           onBlur={(e) => (e.target.style.borderColor = C.border)}
         />
       </div>
+      {error && (
+        <div style={{ marginTop: 14, color: C.danger, fontSize: 13, lineHeight: 1.5, textAlign: "center" }}>{error}</div>
+      )}
+      {notice && (
+        <div style={{ marginTop: 14, color: C.green, fontSize: 13, lineHeight: 1.5, textAlign: "center" }}>{notice}</div>
+      )}
       <div style={{ width: "100%", marginTop: 20, display: "flex", flexDirection: "column", gap: 14, animation: "fadeUp .6s .2s both" }}>
         <button
-          onClick={onLogin}
+          onClick={submit}
+          disabled={loading}
           style={{
             width: "100%",
             padding: "17px",
@@ -622,12 +697,17 @@ function LoginScreen({ onLogin, isDesktop = false }) {
             justifyContent: "center",
             gap: 8,
             boxShadow: `0 6px 24px ${C.greenGlow}`,
+            opacity: loading ? 0.72 : 1,
           }}
         >
-          <IcoArr /> Entrar
+          <IcoArr /> {loading ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}
         </button>
         <button
-          onClick={onLogin}
+          onClick={() => {
+            setMode(mode === "login" ? "signup" : "login");
+            setError("");
+            setNotice("");
+          }}
           style={{
             color: C.textSub,
             fontSize: 14,
@@ -637,7 +717,7 @@ function LoginScreen({ onLogin, isDesktop = false }) {
             gap: 6,
           }}
         >
-          Continuar sem login <IcoArr />
+          {mode === "login" ? "Criar nova conta" : "Ja tenho conta"} <IcoArr />
         </button>
       </div>
     </>
@@ -712,7 +792,8 @@ function LoginScreen({ onLogin, isDesktop = false }) {
   );
 }
 
-function HomeScreen({ setScreen }) {
+function HomeScreen({ setScreen, profile, user }) {
+  const displayName = getDisplayName(profile, user);
   const quickItems = [
     { id: "historico", Icon: IcoHistory, label: "Historico", sub: "Analises anteriores" },
     { id: "pragas", Icon: IcoBug, label: "Pragas", sub: "Catalogo de pragas" },
@@ -739,11 +820,11 @@ function HomeScreen({ setScreen }) {
             fontSize: 13,
           }}
         >
-          JC
+          {getInitials(displayName)}
         </button>
       </div>
 
-      <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 26, fontWeight: 800, marginBottom: 4 }}>Ola, Joao!</h2>
+      <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 26, fontWeight: 800, marginBottom: 4 }}>Ola, {displayName}!</h2>
       <p style={{ color: C.textSub, fontSize: 14, marginBottom: 22 }}>Pronto para identificar pragas na sua lavoura?</p>
 
       <button
@@ -1072,8 +1153,20 @@ function RecomendacaoScreen({ onBack }) {
   );
 }
 
-const riskColor = (r) => (r === "red" ? C.danger : r === "yellow" ? C.warn : C.orange);
-const riskLabel = (r) => (r === "red" ? "Risco Alto" : r === "yellow" ? "Risco Medio" : "Risco Moderado");
+const normalizeRisk = (risk = "") => {
+  const value = risk.toLowerCase();
+  if (value.includes("alto") || value === "red") return "red";
+  if (value.includes("medio") || value.includes("médio") || value === "yellow") return "yellow";
+  return "orange";
+};
+const riskColor = (r) => {
+  const risk = normalizeRisk(r);
+  return risk === "red" ? C.danger : risk === "yellow" ? C.warn : C.orange;
+};
+const riskLabel = (r) => {
+  const risk = normalizeRisk(r);
+  return risk === "red" ? "Risco Alto" : risk === "yellow" ? "Risco Medio" : "Risco Moderado";
+};
 
 const PRAGAS = [
   {
@@ -1110,20 +1203,95 @@ const PRAGAS = [
 
 function PragasScreen({ setScreen }) {
   const [sel, setSel] = useState(null);
+  const [pragas, setPragas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPragas() {
+      setLoading(true);
+      setError("");
+      const { data, error: loadError } = await supabase
+        .from("pestes")
+        .select(`
+          id,
+          nome_cientifico,
+          nome_comum,
+          descricao_simples,
+          nivel_risco,
+          periodo_mais_comum,
+          acoes_recomendadas,
+          danos_causados,
+          peste_agrotoxico (
+            agrotoxicos (
+              id,
+              nome_produto,
+              ingrediente_ativo,
+              modo_acao_resumido
+            )
+          )
+        `)
+        .order("nome_comum");
+
+      if (!active) return;
+      if (loadError) {
+        setError(loadError.message);
+      } else {
+        setPragas(data || []);
+      }
+      setLoading(false);
+    }
+
+    loadPragas();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (sel !== null) {
-    const p = PRAGAS[sel];
+    const p = pragas[sel];
+    const produtos = p?.peste_agrotoxico?.map((rel) => rel.agrotoxicos).filter(Boolean) || [];
     return (
       <div className="screen-enter" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <BackHeader title={p.name} onBack={() => setSel(null)} />
+        <BackHeader title={p.nome_comum} onBack={() => setSel(null)} />
         <div style={{ flex: 1, overflow: "auto", padding: "18px 20px 20px" }}>
           <div style={{ width: "100%", height: 180, borderRadius: 18, background: "#183a10", border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
             <NoImagePlaceholder height={140} />
           </div>
-          <Badge color={riskColor(p.risk)}>{riskLabel(p.risk)}</Badge>
+          <Badge color={riskColor(p.nivel_risco)}>{riskLabel(p.nivel_risco)}</Badge>
+          {p.nome_cientifico && (
+            <p style={{ color: C.textSub, fontSize: 13, marginTop: 10, fontStyle: "italic" }}>{p.nome_cientifico}</p>
+          )}
           <InfoCard style={{ marginTop: 14 }} title="Descricao">
-            <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{p.detail}</p>
+            <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{p.descricao_simples || "Sem descricao cadastrada."}</p>
           </InfoCard>
+          <InfoCard title="Danos causados">
+            <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{p.danos_causados || "Sem danos cadastrados."}</p>
+          </InfoCard>
+          <InfoCard title="Acoes recomendadas">
+            <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{p.acoes_recomendadas || "Sem recomendacoes cadastradas."}</p>
+          </InfoCard>
+          <InfoCard title="Periodo mais comum">
+            <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{p.periodo_mais_comum || "Nao informado."}</p>
+          </InfoCard>
+          <h4 style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Agrotoxicos relacionados</h4>
+          {produtos.length ? (
+            produtos.map((produto) => (
+              <div key={produto.id} style={{ padding: "14px 16px", background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ color: C.green }}>
+                  <IcoFlask />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{produto.nome_produto}</div>
+                  <div style={{ color: C.textSub, fontSize: 12 }}>{produto.ingrediente_ativo}</div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <EmptyState label="Nenhum agrotoxico relacionado a esta praga." />
+          )}
         </div>
       </div>
     );
@@ -1133,10 +1301,13 @@ function PragasScreen({ setScreen }) {
     <div className="screen-enter" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <BackHeader title="Pragas" onBack={() => setScreen("home")} />
       <div style={{ flex: 1, overflow: "auto", padding: "14px 20px 20px" }}>
+        {loading && <LoadingState />}
+        {error && <EmptyState label={`Erro ao carregar pragas: ${error}`} />}
+        {!loading && !error && pragas.length === 0 && <EmptyState label="Nenhuma praga cadastrada." />}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {PRAGAS.map((p, i) => (
+          {pragas.map((p, i) => (
             <button
-              key={i}
+              key={p.id}
               onClick={() => setSel(i)}
               style={{
                 background: C.bgCard,
@@ -1151,13 +1322,13 @@ function PragasScreen({ setScreen }) {
               onMouseEnter={(e) => (e.currentTarget.style.borderColor = C.borderLight)}
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = C.border)}
             >
-              <div style={{ position: "absolute", top: 10, right: 10, width: 10, height: 10, borderRadius: "50%", background: riskColor(p.risk), boxShadow: `0 0 6px ${riskColor(p.risk)}88` }} />
+              <div style={{ position: "absolute", top: 10, right: 10, width: 10, height: 10, borderRadius: "50%", background: riskColor(p.nivel_risco), boxShadow: `0 0 6px ${riskColor(p.nivel_risco)}88` }} />
               <div style={{ width: "100%", height: 108, background: "#183a10", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <span style={{ color: C.textSub, fontSize: 11, fontWeight: 700 }}>Sem imagem</span>
               </div>
               <div style={{ padding: "10px 12px 14px" }}>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{p.name}</div>
-                <div style={{ color: C.textSub, fontSize: 12, lineHeight: 1.45 }}>{p.sub}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{p.nome_comum}</div>
+                <div style={{ color: C.textSub, fontSize: 12, lineHeight: 1.45 }}>{p.descricao_simples || p.nome_cientifico}</div>
               </div>
             </button>
           ))}
@@ -1197,12 +1368,59 @@ const PESTICIDAS = [
 
 function PesticidasScreen({ setScreen }) {
   const [open, setOpen] = useState(null);
+  const [pesticidas, setPesticidas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPesticidas() {
+      setLoading(true);
+      setError("");
+      const { data, error: loadError } = await supabase
+        .from("agrotoxicos")
+        .select(`
+          id,
+          nome_produto,
+          ingrediente_ativo,
+          modo_acao_resumido,
+          agrotoxico_fornecedor (
+            fornecedores (
+              id,
+              nome,
+              contato
+            )
+          )
+        `)
+        .order("nome_produto");
+
+      if (!active) return;
+      if (loadError) {
+        setError(loadError.message);
+      } else {
+        setPesticidas(data || []);
+      }
+      setLoading(false);
+    }
+
+    loadPesticidas();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <div className="screen-enter" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <BackHeader title="Pesticidas" onBack={() => setScreen("home")} />
       <div style={{ flex: 1, overflow: "auto", padding: "14px 20px 20px" }}>
-        {PESTICIDAS.map((p, i) => (
-          <div key={i} style={{ marginBottom: 10 }}>
+        {loading && <LoadingState />}
+        {error && <EmptyState label={`Erro ao carregar pesticidas: ${error}`} />}
+        {!loading && !error && pesticidas.length === 0 && <EmptyState label="Nenhum pesticida cadastrado." />}
+        {pesticidas.map((p, i) => {
+          const fornecedores = p.agrotoxico_fornecedor?.map((rel) => rel.fornecedores).filter(Boolean) || [];
+          return (
+          <div key={p.id} style={{ marginBottom: 10 }}>
             <button
               onClick={() => setOpen(open === i ? null : i)}
               style={{
@@ -1221,18 +1439,30 @@ function PesticidasScreen({ setScreen }) {
                 <IcoFlask />
               </div>
               <div style={{ flex: 1, textAlign: "left" }}>
-                <div style={{ fontWeight: 600, color: C.text, fontSize: 14 }}>{p.name}</div>
-                <div style={{ color: C.textSub, fontSize: 12 }}>{p.type}</div>
+                <div style={{ fontWeight: 600, color: C.text, fontSize: 14 }}>{p.nome_produto}</div>
+                <div style={{ color: C.textSub, fontSize: 12 }}>{p.ingrediente_ativo}</div>
               </div>
               <IcoChevD open={open === i} />
             </button>
             {open === i && (
               <div style={{ background: C.bgLight, borderRadius: "0 0 14px 14px", border: `1px solid ${C.green}`, borderTop: "none", padding: "14px 18px", animation: "fadeIn .2s both" }}>
-                <p style={{ color: C.textSub, fontSize: 13, lineHeight: 1.65 }}>{p.detail}</p>
+                <p style={{ color: C.textSub, fontSize: 13, lineHeight: 1.65 }}>{p.modo_acao_resumido || "Sem modo de acao cadastrado."}</p>
+                <h4 style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>Fornecedores</h4>
+                {fornecedores.length ? (
+                  fornecedores.map((f) => (
+                    <div key={f.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}`, color: C.textSub, fontSize: 13 }}>
+                      <div style={{ color: C.text, fontWeight: 700 }}>{f.nome}</div>
+                      <div>{f.contato || "Contato nao informado"}</div>
+                    </div>
+                  ))
+                ) : (
+                  <p style={{ color: C.textSub, fontSize: 13 }}>Nenhum fornecedor relacionado.</p>
+                )}
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1271,7 +1501,8 @@ function HistoricoScreen({ setScreen }) {
   );
 }
 
-function PerfilScreen({ setScreen, onLogout }) {
+function PerfilScreen({ setScreen, onLogout, profile, user }) {
+  const displayName = getDisplayName(profile, user);
   const menuItems = [
     { Icon: IcoCog, label: "Configuracoes" },
     { Icon: IcoBell, label: "Notificacoes" },
@@ -1286,9 +1517,9 @@ function PerfilScreen({ setScreen, onLogout }) {
           <div style={{ width: 82, height: 82, borderRadius: "50%", background: C.bgLight, border: `2px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <IcoUser />
           </div>
-          <h2 style={{ fontFamily: "'Sora',sans-serif", fontWeight: 800, fontSize: 20, marginBottom: 6 }}>Joao Carlos</h2>
+          <h2 style={{ fontFamily: "'Sora',sans-serif", fontWeight: 800, fontSize: 20, marginBottom: 6 }}>{displayName}</h2>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, color: C.textSub, fontSize: 13 }}>
-            <IcoPin /> Ribeirao Preto, SP
+            <IcoPin /> {user?.email || "Conta Visiagro"}
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
@@ -1350,15 +1581,121 @@ function PerfilScreen({ setScreen, onLogout }) {
 export default function App() {
   const [appState, setAppState] = useState("splash");
   const [screen, setScreen] = useState("home");
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
   const isDesktop = useIsDesktop();
 
-  const handleLogin = () => {
+  const loadProfile = async (currentUser, nomeFallback) => {
+    if (!currentUser) return null;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, nome, created_at")
+      .eq("id", currentUser.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Falha ao carregar perfil:", error);
+      return null;
+    }
+
+    if (data) return data;
+
+    const nome = nomeFallback || currentUser.user_metadata?.nome || currentUser.email?.split("@")[0] || "Usuario";
+    const { data: createdProfile, error: createError } = await supabase
+      .from("profiles")
+      .upsert({ id: currentUser.id, nome }, { onConflict: "id" })
+      .select("id, nome, created_at")
+      .single();
+
+    if (createError) {
+      console.error("Falha ao criar perfil:", createError);
+      return null;
+    }
+
+    return createdProfile;
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    async function restoreSession() {
+      const { data } = await supabase.auth.getSession();
+      if (!active) return;
+
+      const currentUser = data.session?.user || null;
+      setUser(currentUser);
+      if (currentUser) {
+        const loadedProfile = await loadProfile(currentUser);
+        if (active) setProfile(loadedProfile);
+      }
+    }
+
+    restoreSession();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user || null;
+      setUser(currentUser);
+      setProfile(currentUser ? await loadProfile(currentUser) : null);
+      if (!currentUser) {
+        setAppState("login");
+        setScreen("home");
+      }
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogin = async ({ mode, nome, email, password }) => {
+    if (mode === "signup") {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { nome },
+        },
+      });
+
+      if (error) return { error: error.message };
+
+      if (!data.session) {
+        return {
+          notice: "Cadastro criado. Confirme seu e-mail no Supabase Auth e depois faca login.",
+        };
+      }
+
+      const loadedProfile = await loadProfile(data.user, nome);
+      setUser(data.user);
+      setProfile(loadedProfile);
+      setAppState("main");
+      setScreen("home");
+      return {};
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { error: error.message };
+
+    const loadedProfile = await loadProfile(data.user);
+    setUser(data.user);
+    setProfile(loadedProfile);
     setAppState("main");
+    setScreen("home");
+    return {};
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    setAppState("login");
     setScreen("home");
   };
 
-  const handleLogout = () => {
-    setAppState("login");
+  const handleSplashDone = () => {
+    setAppState(user ? "main" : "login");
   };
 
   const navActive = ["historico", "pragas", "pesticidas", "identificar", "perfil"].includes(screen) ? screen : "home";
@@ -1366,12 +1703,12 @@ export default function App() {
 
   const mainScreens = (
     <>
-      {screen === "home" && <HomeScreen setScreen={setScreen} />}
+      {screen === "home" && <HomeScreen setScreen={setScreen} profile={profile} user={user} />}
       {screen === "identificar" && <IdentificarScreen setScreen={setScreen} />}
       {screen === "pragas" && <PragasScreen setScreen={setScreen} />}
       {screen === "pesticidas" && <PesticidasScreen setScreen={setScreen} />}
       {screen === "historico" && <HistoricoScreen setScreen={setScreen} />}
-      {screen === "perfil" && <PerfilScreen setScreen={setScreen} onLogout={handleLogout} />}
+      {screen === "perfil" && <PerfilScreen setScreen={setScreen} onLogout={handleLogout} profile={profile} user={user} />}
 
       {showNav && <BottomNav active={navActive} setScreen={setScreen} />}
     </>
@@ -1390,7 +1727,7 @@ export default function App() {
           <LoginScreen onLogin={handleLogin} isDesktop />
         ) : (
           <div className="phone-frame">
-            {appState === "splash" && <SplashScreen onDone={() => setAppState("login")} />}
+            {appState === "splash" && <SplashScreen onDone={handleSplashDone} />}
             {appState === "login" && !isDesktop && <LoginScreen onLogin={handleLogin} />}
             {appState === "main" && mainScreens}
           </div>
