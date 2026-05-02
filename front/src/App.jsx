@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import logoOficialIcon from "./assets/logo-oficial-icon.png";
 import { supabase } from "./lib/supabase";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const C = {
   bg: "#0a1a0a",
@@ -383,6 +385,14 @@ const getInitials = (name) =>
     .join("")
     .toUpperCase() || "U";
 
+const withTimeout = (promise, label = "Operacao", timeoutMs = 15000) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} demorou demais para responder.`)), timeoutMs);
+    }),
+  ]);
+
 const BackHeader = ({ title, onBack }) => (
   <div
     style={{
@@ -613,15 +623,19 @@ function LoginScreen({ onLogin, isDesktop = false }) {
     }
 
     setLoading(true);
-    const result = await onLogin({ mode, nome: nome.trim(), email, password: pass });
-    setLoading(false);
-
-    if (result?.error) {
-      setError(result.error);
-      return;
-    }
-    if (result?.notice) {
-      setNotice(result.notice);
+    try {
+      const result = await onLogin({ mode, nome: nome.trim(), email, password: pass });
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      if (result?.notice) {
+        setNotice(result.notice);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -899,14 +913,69 @@ function HomeScreen({ setScreen, profile, user }) {
 
 function IdentificarScreen({ setScreen }) {
   const [phase, setPhase] = useState("idle");
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
 
-  const shoot = () => {
+  const analyzeFile = async (file) => {
+    if (!file) return;
+    setError("");
     setPhase("processing");
-    setTimeout(() => setPhase("result"), 2700);
+
+    const previewUrl = URL.createObjectURL(file);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    if (!token) {
+      URL.revokeObjectURL(previewUrl);
+      setError("Faca login novamente para analisar imagens.");
+      setPhase("idle");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeout));
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || "Falha ao analisar imagem.");
+      }
+
+      setResult({ ...data, previewUrl });
+      setPhase("result");
+    } catch (err) {
+      URL.revokeObjectURL(previewUrl);
+      setError(err.name === "AbortError" ? "A analise demorou demais. Verifique se a API esta rodando." : err.message);
+      setPhase("idle");
+    }
   };
 
   if (phase === "result") {
-    return <ResultadoScreen onBack={() => setPhase("idle")} onRec={() => setPhase("rec")} setScreen={setScreen} />;
+    return (
+      <ResultadoScreen
+        result={result}
+        onBack={() => {
+          if (result?.previewUrl) URL.revokeObjectURL(result.previewUrl);
+          setResult(null);
+          setPhase("idle");
+        }}
+        onRec={() => setPhase("rec")}
+        setScreen={setScreen}
+      />
+    );
   }
   if (phase === "rec") {
     return <RecomendacaoScreen onBack={() => setPhase("result")} setScreen={setScreen} />;
@@ -982,8 +1051,23 @@ function IdentificarScreen({ setScreen }) {
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, paddingBottom: 20 }}>
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: "none" }}
+            onChange={(e) => analyzeFile(e.target.files?.[0])}
+          />
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => analyzeFile(e.target.files?.[0])}
+          />
           <button
-            onClick={shoot}
+            onClick={() => cameraInputRef.current?.click()}
             style={{
               padding: "16px",
               borderRadius: 14,
@@ -1000,7 +1084,7 @@ function IdentificarScreen({ setScreen }) {
             <IcoCamera /> Tirar foto
           </button>
           <button
-            onClick={shoot}
+            onClick={() => galleryInputRef.current?.click()}
             style={{
               padding: "16px",
               borderRadius: 14,
@@ -1018,6 +1102,7 @@ function IdentificarScreen({ setScreen }) {
             <IcoImage /> Galeria
           </button>
         </div>
+        {error && <div style={{ color: C.danger, fontSize: 13, textAlign: "center", paddingBottom: 16 }}>{error}</div>}
       </div>
     </div>
   );
@@ -1059,21 +1144,30 @@ function ProcessandoScreen() {
   );
 }
 
-function ResultadoScreen({ onBack, onRec }) {
+function ResultadoScreen({ result, onBack, onRec }) {
+  const peste = result?.peste;
+  const label = peste?.nome_comum || result?.label || "Nenhuma deteccao";
+  const confidence = typeof result?.confianca === "number" ? Math.round(result.confianca * 100) : null;
+  const risk = peste?.nivel_risco;
+
   return (
     <div className="screen-enter" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <BackHeader title="Resultado" onBack={onBack} />
       <div style={{ flex: 1, overflow: "auto", padding: "16px 20px 20px" }}>
         <div style={{ width: "100%", height: 190, borderRadius: 18, overflow: "hidden", background: "linear-gradient(135deg,#183a10,#0e2a09)", border: `1px solid ${C.border}`, marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <NoImagePlaceholder height={156} />
+          {result?.previewUrl ? (
+            <img src={result.previewUrl} alt="Imagem analisada" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <NoImagePlaceholder height={156} />
+          )}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
-            <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 26, fontWeight: 800, marginBottom: 3 }}>Lagarta</h2>
-            <p style={{ color: C.textSub, fontSize: 13 }}>Praga identificada</p>
+            <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 26, fontWeight: 800, marginBottom: 3 }}>{label}</h2>
+            <p style={{ color: C.textSub, fontSize: 13 }}>{peste ? "Praga identificada" : "Resultado da analise"}</p>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 30, fontWeight: 800, color: C.green }}>94%</div>
+            <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 30, fontWeight: 800, color: C.green }}>{confidence !== null ? `${confidence}%` : "--"}</div>
             <div style={{ color: C.textSub, fontSize: 12 }}>Confianca</div>
           </div>
         </div>
@@ -1081,13 +1175,16 @@ function ResultadoScreen({ onBack, onRec }) {
           <div style={{ color: C.warn }}>
             <IcoRisk />
           </div>
-          Nivel de risco: <Badge color={C.danger}>Alto</Badge>
+          Nivel de risco: <Badge color={riskColor(risk)}>{risk ? riskLabel(risk).replace("Risco ", "") : "Nao informado"}</Badge>
         </div>
         <InfoCard title="Descricao">
-          <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>Larva de lepidopteros que se alimenta de folhas, caules e frutos. Comumente encontrada em culturas de soja, milho e algodao.</p>
+          <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{peste?.descricao_simples || "A analise foi registrada, mas nao encontramos uma praga correspondente na tabela pestes."}</p>
         </InfoCard>
         <InfoCard title="Danos causados">
-          <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>Desfolha intensa, reducao de area fotossintetica, perfuracao de frutos e vagens, podendo causar perdas de ate 30% na produtividade.</p>
+          <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{peste?.danos_causados || "Sem informacao cadastrada."}</p>
+        </InfoCard>
+        <InfoCard title="Acoes recomendadas">
+          <p style={{ color: C.textSub, fontSize: 14, lineHeight: 1.65 }}>{peste?.acoes_recomendadas || "Sem recomendacoes cadastradas."}</p>
         </InfoCard>
         <button onClick={onRec} style={{ width: "100%", padding: "16px", borderRadius: 14, background: `linear-gradient(135deg,${C.green},${C.greenLime})`, color: C.bg, fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: `0 6px 20px ${C.greenGlow}` }}>
           Ver Recomendacoes <IcoArr />
@@ -1213,35 +1310,47 @@ function PragasScreen({ setScreen }) {
     async function loadPragas() {
       setLoading(true);
       setError("");
-      const { data, error: loadError } = await supabase
-        .from("pestes")
-        .select(`
-          id,
-          nome_cientifico,
-          nome_comum,
-          descricao_simples,
-          nivel_risco,
-          periodo_mais_comum,
-          acoes_recomendadas,
-          danos_causados,
-          peste_agrotoxico (
-            agrotoxicos (
+      try {
+        const { data, error: loadError } = await withTimeout(
+          supabase
+            .from("pestes")
+            .select(`
               id,
-              nome_produto,
-              ingrediente_ativo,
-              modo_acao_resumido
-            )
-          )
-        `)
-        .order("nome_comum");
+              nome_cientifico,
+              nome_comum,
+              descricao_simples,
+              nivel_risco,
+              periodo_mais_comum,
+              acoes_recomendadas,
+              danos_causados,
+              peste_agrotoxico (
+                agrotoxicos (
+                  id,
+                  nome_produto,
+                  ingrediente_ativo,
+                  modo_acao_resumido
+                )
+              )
+            `)
+            .order("nome_comum"),
+          "Consulta de pragas"
+        );
 
-      if (!active) return;
-      if (loadError) {
-        setError(loadError.message);
-      } else {
-        setPragas(data || []);
+        if (!active) return;
+        if (loadError) {
+          setError(loadError.message);
+        } else {
+          setPragas(data || []);
+        }
+      } catch (err) {
+        if (active) {
+          setError(err.message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-      setLoading(false);
     }
 
     loadPragas();
@@ -1378,30 +1487,42 @@ function PesticidasScreen({ setScreen }) {
     async function loadPesticidas() {
       setLoading(true);
       setError("");
-      const { data, error: loadError } = await supabase
-        .from("agrotoxicos")
-        .select(`
-          id,
-          nome_produto,
-          ingrediente_ativo,
-          modo_acao_resumido,
-          agrotoxico_fornecedor (
-            fornecedores (
+      try {
+        const { data, error: loadError } = await withTimeout(
+          supabase
+            .from("agrotoxicos")
+            .select(`
               id,
-              nome,
-              contato
-            )
-          )
-        `)
-        .order("nome_produto");
+              nome_produto,
+              ingrediente_ativo,
+              modo_acao_resumido,
+              agrotoxico_fornecedor (
+                fornecedores (
+                  id,
+                  nome,
+                  contato
+                )
+              )
+            `)
+            .order("nome_produto"),
+          "Consulta de pesticidas"
+        );
 
-      if (!active) return;
-      if (loadError) {
-        setError(loadError.message);
-      } else {
-        setPesticidas(data || []);
+        if (!active) return;
+        if (loadError) {
+          setError(loadError.message);
+        } else {
+          setPesticidas(data || []);
+        }
+      } catch (err) {
+        if (active) {
+          setError(err.message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-      setLoading(false);
     }
 
     loadPesticidas();
@@ -1475,27 +1596,102 @@ const HIST = [
 ];
 
 function HistoricoScreen({ setScreen }) {
+  const [historico, setHistorico] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadHistorico() {
+      setLoading(true);
+      setError("");
+      try {
+        const { data: userData, error: userError } = await withTimeout(supabase.auth.getUser(), "Sessao");
+        if (userError || !userData.user) {
+          if (active) {
+            setError("Faca login para ver seu historico.");
+          }
+          return;
+        }
+
+        const { data, error: loadError } = await withTimeout(
+          supabase
+            .from("predictions")
+            .select(`
+              id,
+              filename,
+              label,
+              created_at,
+              confianca,
+              imagem_url,
+              pestes (
+                id,
+                nome_comum,
+                nivel_risco
+              )
+            `)
+            .eq("user_id", userData.user.id)
+            .order("created_at", { ascending: false }),
+          "Consulta de historico"
+        );
+
+        if (!active) return;
+        if (loadError) {
+          setError(loadError.message);
+        } else {
+          setHistorico(data || []);
+        }
+      } catch (err) {
+        if (active) {
+          setError(err.message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadHistorico();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <div className="screen-enter" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <BackHeader title="Historico" onBack={() => setScreen("home")} />
       <div style={{ flex: 1, overflow: "auto", padding: "14px 20px 20px" }}>
-        {HIST.map((h, i) => (
-          <div key={i} style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 14 }}>
+        {loading && <LoadingState />}
+        {error && <EmptyState label={`Erro ao carregar historico: ${error}`} />}
+        {!loading && !error && historico.length === 0 && <EmptyState label="Nenhuma analise encontrada." />}
+        {historico.map((h) => {
+          const confidence = typeof h.confianca === "number" ? Math.round(h.confianca * 100) : null;
+          const date = h.created_at ? new Date(h.created_at).toLocaleDateString("pt-BR") : "Sem data";
+          const name = h.pestes?.nome_comum || h.label || "Sem deteccao";
+          return (
+          <div key={h.id} style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 14 }}>
             <div style={{ width: 54, height: 54, borderRadius: 12, background: "#183a10", border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ color: C.textSub, fontSize: 11, fontWeight: 700 }}>Sem imagem</span>
+              {h.imagem_url ? (
+                <img src={h.imagem_url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 12 }} />
+              ) : (
+                <span style={{ color: C.textSub, fontSize: 11, fontWeight: 700 }}>Sem imagem</span>
+              )}
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{h.name}</div>
-              <div style={{ color: C.textSub, fontSize: 12 }}>{h.date}</div>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{name}</div>
+              <div style={{ color: C.textSub, fontSize: 12 }}>{date} • {h.filename}</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: C.green, fontWeight: 700, fontSize: 16, fontFamily: "'Sora',sans-serif" }}>{h.conf}%</span>
+              <span style={{ color: C.green, fontWeight: 700, fontSize: 16, fontFamily: "'Sora',sans-serif" }}>{confidence !== null ? `${confidence}%` : "--"}</span>
               <div style={{ color: C.textSub }}>
                 <IcoChevR />
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1588,11 +1784,21 @@ export default function App() {
   const loadProfile = async (currentUser, nomeFallback) => {
     if (!currentUser) return null;
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, nome, created_at")
-      .eq("id", currentUser.id)
-      .maybeSingle();
+    let data;
+    let error;
+    try {
+      ({ data, error } = await withTimeout(
+        supabase
+          .from("profiles")
+          .select("id, nome, created_at")
+          .eq("id", currentUser.id)
+          .maybeSingle(),
+        "Consulta de perfil"
+      ));
+    } catch (err) {
+      console.error("Falha ao carregar perfil:", err);
+      return null;
+    }
 
     if (error) {
       console.error("Falha ao carregar perfil:", error);
@@ -1602,11 +1808,21 @@ export default function App() {
     if (data) return data;
 
     const nome = nomeFallback || currentUser.user_metadata?.nome || currentUser.email?.split("@")[0] || "Usuario";
-    const { data: createdProfile, error: createError } = await supabase
-      .from("profiles")
-      .upsert({ id: currentUser.id, nome }, { onConflict: "id" })
-      .select("id, nome, created_at")
-      .single();
+    let createdProfile;
+    let createError;
+    try {
+      ({ data: createdProfile, error: createError } = await withTimeout(
+        supabase
+          .from("profiles")
+          .upsert({ id: currentUser.id, nome }, { onConflict: "id" })
+          .select("id, nome, created_at")
+          .single(),
+        "Criacao de perfil"
+      ));
+    } catch (err) {
+      console.error("Falha ao criar perfil:", err);
+      return null;
+    }
 
     if (createError) {
       console.error("Falha ao criar perfil:", createError);
@@ -1620,27 +1836,43 @@ export default function App() {
     let active = true;
 
     async function restoreSession() {
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
+      try {
+        const { data } = await withTimeout(supabase.auth.getSession(), "Sessao");
+        if (!active) return;
 
-      const currentUser = data.session?.user || null;
-      setUser(currentUser);
-      if (currentUser) {
-        const loadedProfile = await loadProfile(currentUser);
-        if (active) setProfile(loadedProfile);
+        const currentUser = data.session?.user || null;
+        setUser(currentUser);
+        if (currentUser) {
+          const loadedProfile = await loadProfile(currentUser);
+          if (active) setProfile(loadedProfile);
+        }
+      } catch (err) {
+        console.error("Falha ao restaurar sessao:", err);
+        if (active) {
+          setUser(null);
+          setProfile(null);
+          setAppState("login");
+        }
       }
     }
 
     restoreSession();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user || null;
       setUser(currentUser);
-      setProfile(currentUser ? await loadProfile(currentUser) : null);
       if (!currentUser) {
+        setProfile(null);
         setAppState("login");
         setScreen("home");
+        return;
       }
+
+      setTimeout(async () => {
+        if (!active) return;
+        const loadedProfile = await loadProfile(currentUser);
+        if (active) setProfile(loadedProfile);
+      }, 0);
     });
 
     return () => {
@@ -1651,13 +1883,16 @@ export default function App() {
 
   const handleLogin = async ({ mode, nome, email, password }) => {
     if (mode === "signup") {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { nome },
-        },
-      });
+      const { data, error } = await withTimeout(
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { nome },
+          },
+        }),
+        "Cadastro"
+      );
 
       if (error) return { error: error.message };
 
@@ -1675,7 +1910,10 @@ export default function App() {
       return {};
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await withTimeout(
+      supabase.auth.signInWithPassword({ email, password }),
+      "Login"
+    );
     if (error) return { error: error.message };
 
     const loadedProfile = await loadProfile(data.user);
@@ -1687,11 +1925,15 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
     setAppState("login");
     setScreen("home");
+    try {
+      await withTimeout(supabase.auth.signOut(), "Logout", 8000);
+    } catch (err) {
+      console.error("Falha ao sair:", err);
+    }
   };
 
   const handleSplashDone = () => {
