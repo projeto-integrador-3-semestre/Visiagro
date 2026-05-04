@@ -67,7 +67,7 @@ Recomendado: Python 3.11.
 
 ```powershell
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 uvicorn api.index:app --reload --host 127.0.0.1 --port 8000
