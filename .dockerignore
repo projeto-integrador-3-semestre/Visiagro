@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.git/
+.gitignore
+.env
+front/.env
+front/node_modules/
+front/dist/
+api/__pycache__/
+runs/
