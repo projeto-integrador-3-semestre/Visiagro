@@ -13,6 +13,9 @@ from PIL import Image
 from supabase import Client, create_client
 from ultralytics import YOLO
 
+from api.reports import get_router as get_reports_router
+
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT_DIR / "model" / "best.pt"
 
@@ -36,6 +39,8 @@ model = YOLO(str(MODEL_PATH))
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI(title="Visiagro API", description="Deteccao de pragas com YOLOv8")
+
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -134,6 +139,8 @@ def _insert_prediction(token: str, payload: dict):
     except URLError as error:
         raise HTTPException(status_code=502, detail=f"Falha ao conectar no Supabase: {error.reason}") from error
 
+reports_router = get_reports_router(supabase, SUPABASE_URL, SUPABASE_KEY, _parse_bearer_token, _get_user_id)
+app.include_router(reports_router)
 
 @app.get("/health")
 def health_check():

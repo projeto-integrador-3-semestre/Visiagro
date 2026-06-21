@@ -3,6 +3,8 @@ import "leaflet/dist/leaflet.css";
 import React, { useEffect, useRef, useState } from "react";
 import logoOficialIcon from "./assets/logo-oficial-icon.png";
 import { supabase } from "./lib/supabase";
+import ReportModal from "./components/ReportModal";
+
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -1016,6 +1018,8 @@ function LoginScreen({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [aceitouTermo, setAceitouTermo] = useState(false);
+  const [showTermo, setShowTermo] = useState(false);
 
   const submit = async () => {
     setError("");
@@ -1024,6 +1028,11 @@ function LoginScreen({
       setError("Preencha todos os campos obrigatorios.");
       return;
     }
+    if (mode === "signup" && !aceitouTermo) {
+      setError("Você precisa aceitar os Termos de Uso para criar uma conta.");
+      return;
+    }
+
 
     setLoading(true);
     try {
@@ -1170,6 +1179,97 @@ function LoginScreen({
           {notice}
         </div>
       )}
+      {mode === "signup" && (
+        <div style={{ marginTop: 16 }}>
+          {/* Botão para abrir o termo */}
+          <button
+            type="button"
+            onClick={() => setShowTermo(v => !v)}
+            style={{
+              width: "100%",
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: `1px solid ${C.border}`,
+              background: C.bgCard,
+              color: C.textSub,
+              fontSize: 13,
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 8,
+            }}
+          >
+            <span>📄 Termos de Uso e Condições</span>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>{showTermo ? "▲" : "▼"}</span>
+          </button>
+
+          {/* Texto do termo expansível */}
+          {showTermo && (
+            <div style={{
+              background: C.bgCard,
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              padding: "14px 16px",
+              maxHeight: 260,
+              overflowY: "auto",
+              fontSize: 12,
+              color: C.textSub,
+              lineHeight: 1.65,
+              marginBottom: 10,
+            }}>
+              <p style={{ fontWeight: 700, color: C.text, marginBottom: 10, fontSize: 13 }}>
+                TERMO DE ACEITE E CONDIÇÕES DE USO
+              </p>
+              <p style={{ marginBottom: 8 }}><b>1. Apresentação do Serviço</b></p>
+              <p style={{ marginBottom: 8 }}>Este sistema utiliza inteligência artificial para identificar pragas agrícolas por meio de fotografias enviadas pelo usuário, sugerir defensivos agrícolas e gerar automaticamente o Receituário Agronômico e o Relatório Agronômico correspondentes. A utilização do sistema implica a leitura, compreensão e aceitação integral das condições descritas neste Termo.</p>
+              <p style={{ marginBottom: 8 }}><b>2. Natureza do Serviço e Responsabilidade Técnica</b></p>
+              <p style={{ marginBottom: 6, color: C.warn }}>⚠ Os diagnósticos gerados pelo sistema são auxiliares e não substituem a avaliação presencial de um Engenheiro Agrônomo habilitado.</p>
+              <p style={{ marginBottom: 8 }}>O Receituário Agronômico e o Relatório Agronômico somente são emitidos sob responsabilidade de Engenheiro Agrônomo devidamente registrado no CREA, conforme exigência da Lei nº 6.894/1980.</p>
+              <p style={{ marginBottom: 8 }}><b>3. Obrigações do Usuário</b></p>
+              <p style={{ marginBottom: 8 }}>O usuário deve enviar fotografias nítidas e com boa iluminação. As informações fornecidas sobre a propriedade e lavoura devem ser verdadeiras. A aplicação de defensivos deve respeitar integralmente o Receituário emitido, rótulo, bula e normas vigentes. É vedado utilizar o sistema para fins fraudulentos ou falsificar documentos gerados.</p>
+              <p style={{ marginBottom: 8 }}><b>4. Validade Legal dos Documentos</b></p>
+              <p style={{ marginBottom: 8 }}>Os documentos possuem validade legal condicionada à assinatura do Engenheiro Agrônomo responsável e ao registro no CREA estadual correspondente, conforme Decreto nº 4.074/2002.</p>
+              <p style={{ marginBottom: 8 }}><b>5. Privacidade e Uso de Dados</b></p>
+              <p style={{ marginBottom: 8 }}>O sistema coleta dados de identificação, imagens, dados georreferenciados e histórico de pragas, tratados conforme a LGPD (Lei nº 13.709/2018). As imagens poderão ser usadas de forma anonimizada para aprimoramento da IA. Os dados não serão comercializados.</p>
+              <p style={{ marginBottom: 8 }}><b>6. Limitações de Responsabilidade</b></p>
+              <p style={{ marginBottom: 8, color: C.warn }}>⚠ O desenvolvedor não se responsabiliza por danos à lavoura, perdas econômicas ou sanções legais decorrentes da aplicação incorreta de defensivos ou uso inadequado dos diagnósticos gerados.</p>
+              <p style={{ marginBottom: 8 }}><b>7. Alterações neste Termo</b></p>
+              <p style={{ marginBottom: 8 }}>Este Termo poderá ser atualizado com notificação mínima de 15 dias antes de alterações relevantes entrarem em vigor.</p>
+              <p style={{ marginBottom: 4 }}><b>Legislação de referência:</b> Lei nº 6.894/1980 • Decreto nº 4.074/2002 • LGPD — Lei nº 13.709/2018 • Código de Defesa do Consumidor.</p>
+            </div>
+          )}
+
+          {/* Checkbox de aceite */}
+          <label style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            cursor: "pointer",
+            color: C.textSub,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}>
+            <input
+              type="checkbox"
+              checked={aceitouTermo}
+              onChange={(e) => setAceitouTermo(e.target.checked)}
+              style={{ marginTop: 2, accentColor: C.green, width: 16, height: 16, flexShrink: 0 }}
+            />
+            <span>
+              Li e aceito os{" "}
+              <button
+                type="button"
+                onClick={() => setShowTermo(true)}
+                style={{ color: C.green, fontWeight: 700, textDecoration: "underline", fontSize: 13 }}
+              >
+                Termos de Uso e Condições
+              </button>
+              , incluindo as limitações de responsabilidade, exigências sobre o receituário agronômico e disposições sobre privacidade.
+            </span>
+          </label>
+        </div>
+      )}
       <div
         style={{
           width: "100%",
@@ -1182,7 +1282,8 @@ function LoginScreen({
       >
         <button
           onClick={submit}
-          disabled={loading}
+          disabled={loading || (mode === "signup" && !aceitouTermo)}
+          
           style={{
             width: "100%",
             padding: "17px",
@@ -1196,7 +1297,7 @@ function LoginScreen({
             justifyContent: "center",
             gap: 8,
             boxShadow: `0 6px 24px ${C.greenGlow}`,
-            opacity: loading ? 0.72 : 1,
+            opacity: loading || (mode === "signup" && !aceitouTermo) ? 0.55 : 1,
           }}
         >
           <IcoArr />{" "}
@@ -1560,6 +1661,7 @@ function HomeScreen({ setScreen, profile, user, theme, toggleTheme }) {
 
 function IdentificarScreen({ setScreen }) {
   const [phase, setPhase] = useState("idle");
+  const [showReport, setShowReport] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [farms, setFarms] = useState([]);
@@ -1643,18 +1745,30 @@ function IdentificarScreen({ setScreen }) {
 
   if (phase === "result") {
     return (
-      <ResultadoScreen
-        result={result}
-        onBack={() => {
-          if (result?.previewUrl) URL.revokeObjectURL(result.previewUrl);
-          setResult(null);
-          setPhase("idle");
-        }}
-        onRec={() => setPhase("rec")}
-        setScreen={setScreen}
-      />
+      <>
+        <ResultadoScreen
+          result={result}
+          onBack={() => {
+            if (result?.previewUrl) URL.revokeObjectURL(result.previewUrl);
+            setResult(null);
+            setPhase("idle");
+          }}
+          onRec={() => setPhase("rec")}
+          onReport={() => setShowReport(true)}
+          setScreen={setScreen}
+        />
+        {showReport && (
+          <ReportModal
+            predictionId={result?.prediction?.id}
+            pest={result?.peste}
+            confidence={result?.confianca}
+            onClose={() => setShowReport(false)}
+          />
+        )}
+      </>
     );
   }
+
   if (phase === "rec") {
     return (
       <RecomendacaoScreen
@@ -1981,7 +2095,7 @@ function ProcessandoScreen() {
   );
 }
 
-function ResultadoScreen({ result, onBack, onRec }) {
+function ResultadoScreen({ result, onBack, onRec, onReport }) {
   const peste = result?.peste;
   const label = peste?.nome_comum || result?.label || "Nenhuma deteccao";
   const confidence =
@@ -2120,11 +2234,30 @@ function ResultadoScreen({ result, onBack, onRec }) {
         >
           Ver Recomendacoes <IcoArr />
         </button>
+        <button
+          onClick={onReport}
+          style={{
+            width: "100%",
+            marginTop: 10,
+            padding: "14px",
+            borderRadius: 14,
+            background: C.bgCard,
+            border: `1px solid ${C.border}`,
+            color: C.text,
+            fontWeight: 600,
+            fontSize: 15,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          📄 Relatório técnico
+        </button>
       </div>
     </div>
   );
 }
-
 function RecomendacaoScreen({ onBack }) {
   const actions = [
     "Realizar monitoramento com pano de batida semanalmente",
@@ -2434,9 +2567,9 @@ const predictionToAlert = (prediction, farm) => {
       date: createdAt ? createdAt.toLocaleDateString("pt-BR") : "Sem data",
       time: createdAt
         ? createdAt.toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
+          hour: "2-digit",
+          minute: "2-digit",
+        })
         : "--:--",
       description: `${name} detectada em uma região dentro da área de alerta da sua lavoura.`,
       recommendation:
@@ -2450,17 +2583,17 @@ const predictionToAlert = (prediction, farm) => {
 
   const lat = toValidCoordinate(
     prediction.latitude ??
-      prediction.lat ??
-      prediction.localizacao?.lat ??
-      prediction.location?.lat,
+    prediction.lat ??
+    prediction.localizacao?.lat ??
+    prediction.location?.lat,
     -90,
     90,
   );
   const lng = toValidCoordinate(
     prediction.longitude ??
-      prediction.lng ??
-      prediction.localizacao?.lng ??
-      prediction.location?.lng,
+    prediction.lng ??
+    prediction.localizacao?.lng ??
+    prediction.location?.lng,
     -180,
     180,
   );
@@ -2487,9 +2620,9 @@ const predictionToAlert = (prediction, farm) => {
     date: createdAt ? createdAt.toLocaleDateString("pt-BR") : "Sem data",
     time: createdAt
       ? createdAt.toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
+        hour: "2-digit",
+        minute: "2-digit",
+      })
       : "--:--",
     description: `${name} detectada a ${distance.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km da lavoura.`,
     recommendation:
@@ -2962,17 +3095,17 @@ function RealMap({
       ...boundaryLatLngs.map((point) => L.latLng(point[0], point[1])),
       ...(farmCenter
         ? alerts.flatMap((alert) => {
-            const point = L.latLng(alert.lat, alert.lng);
-            if (!alert.approximate) return [point];
-            const radius = Number(alert.areaRadiusKm || 1.5);
-            return [
-              point,
-              L.latLng(offsetCoordinate(alert, radius, 0)),
-              L.latLng(offsetCoordinate(alert, -radius, 0)),
-              L.latLng(offsetCoordinate(alert, 0, radius)),
-              L.latLng(offsetCoordinate(alert, 0, -radius)),
-            ];
-          })
+          const point = L.latLng(alert.lat, alert.lng);
+          if (!alert.approximate) return [point];
+          const radius = Number(alert.areaRadiusKm || 1.5);
+          return [
+            point,
+            L.latLng(offsetCoordinate(alert, radius, 0)),
+            L.latLng(offsetCoordinate(alert, -radius, 0)),
+            L.latLng(offsetCoordinate(alert, 0, radius)),
+            L.latLng(offsetCoordinate(alert, 0, -radius)),
+          ];
+        })
         : []),
     ];
 
@@ -3320,12 +3453,12 @@ function CadastroLavouraScreen({ setScreen, farmToEdit }) {
         const payload = getFarmPayload(farm, user.id);
         const request = farm.id
           ? supabase
-              .from("lavouras")
-              .update(payload)
-              .eq("id", farm.id)
-              .eq("user_id", user.id)
-              .select("*")
-              .single()
+            .from("lavouras")
+            .update(payload)
+            .eq("id", farm.id)
+            .eq("user_id", user.id)
+            .select("*")
+            .single()
           : supabase.from("lavouras").insert(payload).select("*").single();
         const { data, error } = await withTimeout(request, "Salvar lavoura");
         if (error) throw error;
@@ -3824,9 +3957,9 @@ function CadastroLavouraScreen({ setScreen, farmToEdit }) {
               marginTop: 12,
               color:
                 status.includes("Erro") ||
-                status.includes("Informe") ||
-                status.includes("Marque") ||
-                status.includes("Não")
+                  status.includes("Informe") ||
+                  status.includes("Marque") ||
+                  status.includes("Não")
                   ? C.warn
                   : C.green,
               fontSize: 13,
@@ -4305,9 +4438,9 @@ function NotificacoesScreen({ setScreen, onOpenPest }) {
               : "Sem data",
             time: createdAt
               ? createdAt.toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
+                hour: "2-digit",
+                minute: "2-digit",
+              })
               : "--:--",
             timestamp: createdAt ? createdAt.getTime() : 0,
             tag: readIds.includes(id) ? "Lido" : "Novo",
