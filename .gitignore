@@ -1,8 +1,17 @@
 .venv/
 __pycache__/
+node_modules/
+/package-lock.json
 *.pt
 *.h5
 runs/
 .env
+.env.*
+!.env.example
+!.env.*.example
 front/.env
+front/.env.*
+!front/.env.example
 front/node_modules/
+front/dist/
+.Rhistory
