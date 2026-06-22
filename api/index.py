@@ -7,17 +7,21 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from PIL import Image
 from supabase import Client, create_client
 from ultralytics import YOLO
 
+from api.notifications import notify_nearby_farms, sync_historical_alerts_for_farm
 from api.reports import get_router as get_reports_router
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-MODEL_PATH = ROOT_DIR / "model" / "best.pt"
+MODEL_PATH = Path(os.getenv("MODEL_PATH") or ROOT_DIR / "model" / "best.pt")
+FRONT_DIST_DIR = ROOT_DIR / "front" / "dist"
 
 load_dotenv(ROOT_DIR / ".env")
 load_dotenv(ROOT_DIR / "front" / ".env")
@@ -29,6 +33,15 @@ SUPABASE_KEY = (
     or os.getenv("VITE_SUPABASE_PUBLISHABLE_KEY")
     or os.getenv("VITE_SUPABASE_ANON_KEY")
 )
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
 
 if not MODEL_PATH.exists():
     raise RuntimeError(f"Modelo YOLO nao encontrado em: {MODEL_PATH}")
@@ -37,6 +50,11 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 model = YOLO(str(MODEL_PATH))
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+service_supabase: Client | None = (
+    create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    if SUPABASE_SERVICE_ROLE_KEY
+    else None
+)
 
 app = FastAPI(title="Visiagro API", description="Deteccao de pragas com YOLOv8")
 
@@ -44,14 +62,15 @@ app = FastAPI(title="Visiagro API", description="Deteccao de pragas com YOLOv8")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class PredictionActivePayload(BaseModel):
+    ativa: bool
 
 
 def _normalize(value: str | None) -> str:
@@ -139,6 +158,18 @@ def _insert_prediction(token: str, payload: dict):
     except URLError as error:
         raise HTTPException(status_code=502, detail=f"Falha ao conectar no Supabase: {error.reason}") from error
 
+
+def _validate_user_from_header(authorization: str | None) -> tuple[str, str]:
+    token = _parse_bearer_token(authorization)
+    try:
+        user_response = supabase.auth.get_user(token)
+        user_id = _get_user_id(user_response)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=401, detail=f"Falha ao validar usuario: {error}") from error
+    return token, user_id
+
 reports_router = get_reports_router(supabase, SUPABASE_URL, SUPABASE_KEY, _parse_bearer_token, _get_user_id)
 app.include_router(reports_router)
 
@@ -150,16 +181,11 @@ def health_check():
 @app.post("/analyze", summary="Analisa uma imagem e persiste o resultado")
 async def analyze_image(
     file: UploadFile = File(...),
+    latitude: float | None = Form(default=None),
+    longitude: float | None = Form(default=None),
     authorization: str | None = Header(default=None),
 ):
-    token = _parse_bearer_token(authorization)
-    try:
-        user_response = supabase.auth.get_user(token)
-        user_id = _get_user_id(user_response)
-    except HTTPException:
-        raise
-    except Exception as error:
-        raise HTTPException(status_code=401, detail=f"Falha ao validar usuario: {error}") from error
+    token, user_id = _validate_user_from_header(authorization)
 
     contents = await file.read()
     try:
@@ -195,9 +221,21 @@ async def analyze_image(
         "user_id": user_id,
         "peste_id": peste["id"] if peste else None,
         "confianca": confidence,
+        "latitude": latitude,
+        "longitude": longitude,
+        "ativa": True,
     }
 
     inserted = _insert_prediction(token, payload)
+    prediction = inserted[0] if inserted else None
+
+    if service_supabase and prediction:
+        notification_payload = {
+            **payload,
+            "nivel_risco": peste.get("nivel_risco") if peste else None,
+            "recomendacao": peste.get("acoes_recomendadas") if peste else None,
+        }
+        notify_nearby_farms(service_supabase, notification_payload, prediction, contents)
 
     return {
         "status": "success",
@@ -206,5 +244,65 @@ async def analyze_image(
         "confianca": confidence,
         "peste": peste,
         "detections": detections,
-        "prediction": inserted[0] if inserted else None,
+        "prediction": prediction,
     }
+
+
+@app.patch("/predictions/{prediction_id}/active")
+def update_prediction_active(
+    prediction_id: int,
+    payload: PredictionActivePayload,
+    authorization: str | None = Header(default=None),
+):
+    _token, user_id = _validate_user_from_header(authorization)
+    response = (
+        supabase.table("predictions")
+        .update({"ativa": payload.ativa})
+        .eq("id", prediction_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Analise nao encontrada para este usuario.")
+    return {"prediction": response.data[0]}
+
+
+@app.post("/farms/{farm_id}/sync-alerts")
+def sync_farm_alerts(
+    farm_id: str,
+    authorization: str | None = Header(default=None),
+):
+    if service_supabase is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Configure SUPABASE_SERVICE_ROLE_KEY para sincronizar alertas.",
+        )
+
+    _token, user_id = _validate_user_from_header(authorization)
+    farm_response = (
+        supabase.table("lavouras")
+        .select("*")
+        .eq("id", farm_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not farm_response.data:
+        raise HTTPException(status_code=404, detail="Lavoura nao encontrada para este usuario.")
+
+    return sync_historical_alerts_for_farm(service_supabase, farm_response.data)
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def serve_frontend(full_path: str):
+    if not FRONT_DIST_DIR.exists():
+        raise HTTPException(status_code=404, detail="Frontend build nao encontrado.")
+
+    requested_file = (FRONT_DIST_DIR / full_path).resolve()
+    if requested_file.is_file() and FRONT_DIST_DIR.resolve() in requested_file.parents:
+        return FileResponse(requested_file)
+
+    index_file = FRONT_DIST_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    raise HTTPException(status_code=404, detail="Frontend index.html nao encontrado.")

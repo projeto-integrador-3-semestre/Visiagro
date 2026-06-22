@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-import uuid
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 class ReportPayload(BaseModel):
-    prediction_id: str
+    prediction_id: int
     produto_recomendado: Optional[str] = None
     ingrediente_ativo: Optional[str] = None
     dose: Optional[float] = None
@@ -41,7 +40,7 @@ def get_router(supabase_client, supabase_url, supabase_key, parse_token_fn, get_
 
     @router.get("/{prediction_id}")
     async def get_report(
-        prediction_id: str,
+        prediction_id: int,
         authorization: Optional[str] = Header(default=None)
     ):
         token = parse_token_fn(authorization)
