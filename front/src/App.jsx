@@ -1,7 +1,7 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import React, { useEffect, useRef, useState } from "react";
-import logoOficialIcon from "./assets/logo-oficial-icon.png";
+import logoOficialIcon from "./assets/Logo_app.png";
 import { supabase } from "./lib/supabase";
 import ReportModal from "./components/ReportModal";
 
@@ -369,7 +369,7 @@ const IcoHistory = () => (
   </Svg>
 );
 const IcoBug = () => (
-  <Svg size={22}>
+  <Svg size={24}>
     <path d="M8 2l1.88 1.88M14.12 3.88 16 2" />
     <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1" />
     <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6z" />
@@ -384,7 +384,7 @@ const IcoFlask = () => (
 );
 
 const IcoScan = ({ bg = false }) => (
-  <Svg size={26} col={bg ? C.accentText : C.green}>
+  <Svg size={24} col={bg ? C.accentText : undefined}>
     <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
     <circle cx="12" cy="12" r="3" />
   </Svg>
@@ -500,7 +500,7 @@ const IcoLogout = () => (
   </Svg>
 );
 const IcoUser = () => (
-  <Svg size={34} col={C.green}>
+  <Svg size={24}>
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
     <circle cx="12" cy="7" r="4" />
   </Svg>
@@ -747,10 +747,10 @@ function ThemeToggle({ theme, toggleTheme, compact = false }) {
 function BottomNav({ active, setScreen }) {
   const tabs = [
     { id: "home", label: "Home", Icon: IcoHome },
-    { id: "historico", label: "Historico", Icon: IcoHistory },
+    { id: "historico", label: "Histórico", Icon: IcoHistory },
     { id: "identificar", label: "Identificar", Icon: null },
     { id: "pragas", label: "Pragas", Icon: IcoBug },
-    { id: "localizacao", label: "Localizacao", Icon: IcoMapPin },
+    { id: "localizacao", label: "Localização", Icon: IcoMapPin },
   ];
   return (
     <div
@@ -831,10 +831,10 @@ function DesktopSidebar({ active, setScreen, onLogout, theme, toggleTheme }) {
   const tabs = [
     { id: "home", label: "Home", Icon: IcoHome },
     { id: "identificar", label: "Identificar", Icon: IcoScan },
-    { id: "historico", label: "Historico", Icon: IcoHistory },
+    { id: "historico", label: "Histórico", Icon: IcoHistory },
     { id: "pragas", label: "Pragas", Icon: IcoBug },
     { id: "pesticidas", label: "Pesticidas", Icon: IcoFlask },
-    { id: "localizacao", label: "Localizacao", Icon: IcoMapPin },
+    { id: "localizacao", label: "Localização", Icon: IcoMapPin },
     { id: "perfil", label: "Perfil", Icon: IcoUser },
   ];
 
@@ -844,21 +844,14 @@ function DesktopSidebar({ active, setScreen, onLogout, theme, toggleTheme }) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          padding: "4px 10px 16px",
+          gap: -10,
+          padding: "2px 5px 8px",
+          paddingLeft: 5,
+          marginBottom: -60,
+          marginTop: -60,
         }}
       >
-        <IcoLogo size={30} />
-        <span
-          style={{
-            fontFamily: "'Sora',sans-serif",
-            fontWeight: 700,
-            fontSize: 22,
-            color: C.green,
-          }}
-        >
-          Visiagro
-        </span>
+        <IcoLogo size={190} />
       </div>
 
       <div
@@ -866,7 +859,7 @@ function DesktopSidebar({ active, setScreen, onLogout, theme, toggleTheme }) {
           display: "flex",
           flexDirection: "column",
           gap: 8,
-          marginTop: 8,
+          marginTop: .5,
         }}
       >
         {tabs.map(({ id, label, Icon }) => {
@@ -1614,21 +1607,12 @@ function HomeScreen({ setScreen, profile, user, theme, toggleTheme }) {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          marginBottom: 22,
+          marginBottom: -20,
+          marginTop: -30,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <IcoLogo size={30} />
-          <span
-            style={{
-              fontFamily: "'Sora',sans-serif",
-              fontWeight: 700,
-              fontSize: 18,
-              color: C.green,
-            }}
-          >
-            Visiagro
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+          <IcoLogo size={110} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <ThemeToggle theme={theme} toggleTheme={toggleTheme} compact />

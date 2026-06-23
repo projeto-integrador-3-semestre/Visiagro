@@ -20,7 +20,8 @@ TILE_SIZE = 256
 SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT") or 0)
 SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD") or os.getenv("EMAIL_PASSWORLD")
+# Prefer `SMTP_PASSWORD`; fallback to `EMAIL_PASSWORD` if present.
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD") or os.getenv("EMAIL_PASSWORD")
 
 
 def _resolve_email_from() -> str | None:

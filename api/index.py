@@ -1,6 +1,8 @@
 import json
 import os
+import time
 import unicodedata
+import uuid
 from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -13,7 +15,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from PIL import Image
 from supabase import Client, create_client
-from ultralytics import YOLO
+
 
 from api.notifications import notify_nearby_farms, sync_historical_alerts_for_farm
 from api.reports import get_router as get_reports_router
@@ -43,12 +45,32 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 
-if not MODEL_PATH.exists():
-    raise RuntimeError(f"Modelo YOLO nao encontrado em: {MODEL_PATH}")
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("Configure SUPABASE_URL/SUPABASE_ANON_KEY ou as variaveis VITE_SUPABASE_*.")
+# Defer model loading to runtime so the API can start even if the model
+# file is not yet present. Use `_get_model()` to obtain the YOLO instance.
+model = None
 
-model = YOLO(str(MODEL_PATH))
+
+def _get_model():
+    """Lazily load and cache the YOLO model. Raises a RuntimeError with
+    a helpful message if the model file is missing.
+    """
+    global model
+    if model is None:
+        if not MODEL_PATH.exists():
+            raise RuntimeError(
+                f"Modelo YOLO nao encontrado em: {MODEL_PATH}. "
+                "Coloque o arquivo em model/best.pt ou configure MODEL_PATH/MODEL_URL."
+            )
+        # Import here to avoid heavy/optional dependency at import time
+        try:
+            from ultralytics import YOLO
+        except Exception as e:
+            raise RuntimeError(f"Falha ao importar ultralytics: {e}") from e
+        model = YOLO(str(MODEL_PATH))
+    return model
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Configure SUPABASE_URL/SUPABASE_ANON_KEY ou as variaveis VITE_SUPABASE_.")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 service_supabase: Client | None = (
     create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -175,7 +197,7 @@ app.include_router(reports_router)
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "model": str(MODEL_PATH)}
+    return {"status": "ok", "model": str(MODEL_PATH), "model_exists": MODEL_PATH.exists()}
 
 
 @app.post("/analyze", summary="Analisa uma imagem e persiste o resultado")
@@ -193,7 +215,12 @@ async def analyze_image(
     except Exception as error:
         raise HTTPException(status_code=400, detail="Arquivo enviado nao e uma imagem valida.") from error
 
-    results = model.predict(image, verbose=False)
+    try:
+        m = _get_model()
+    except RuntimeError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+
+    results = m.predict(image, verbose=False)
 
     detections = []
     for result in results:
@@ -215,6 +242,30 @@ async def analyze_image(
     confidence = top_detection["confidence"] if top_detection else None
     peste = _find_peste(top_detection["label"] if top_detection else None)
 
+    imagem_url = None
+    if service_supabase:
+        try:
+            bucket_name = os.getenv("SUPABASE_IMAGE_BUCKET", "predictions-images")
+            unique_filename = f"{uuid.uuid4().hex}_{file.filename}"
+            storage_path = f"{user_id}/{unique_filename}"
+            upload_response = service_supabase.storage.from_(bucket_name).upload(
+                storage_path,
+                contents,
+            )
+            if isinstance(upload_response, dict) and upload_response.get("error"):
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Falha ao enviar imagem para storage: {upload_response['error']}",
+                )
+            imagem_url = service_supabase.storage.from_(bucket_name).get_public_url(storage_path)
+            if not imagem_url:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Falha ao obter URL pública da imagem.",
+                )
+        except Exception:
+            imagem_url = None
+
     payload = {
         "filename": file.filename,
         "label": label_final,
@@ -224,6 +275,7 @@ async def analyze_image(
         "latitude": latitude,
         "longitude": longitude,
         "ativa": True,
+        "imagem_url": imagem_url,
     }
 
     inserted = _insert_prediction(token, payload)
@@ -243,6 +295,7 @@ async def analyze_image(
         "label": label_final,
         "confianca": confidence,
         "peste": peste,
+        "imagem_url": imagem_url,
         "detections": detections,
         "prediction": prediction,
     }
@@ -288,7 +341,7 @@ def sync_farm_alerts(
         .execute()
     )
     if not farm_response.data:
-        raise HTTPException(status_code=404, detail="Lavoura nao encontrada para este usuario.")
+        raise HTTPException(status_code=404, detail="Lavoura não encontrada para este usuário.")
 
     return sync_historical_alerts_for_farm(service_supabase, farm_response.data)
 
